@@ -49,6 +49,12 @@ variable "container_image" {
   type        = string
 }
 
+variable "image_tag" {
+  description = "Tag of the container image"
+  type        = string
+  default     = "latest"
+}
+
 variable "desired_count" {
   description = "Desired number of tasks"
   type        = number
@@ -78,6 +84,54 @@ variable "task_role_arn" {
   default     = null
 }
 
+variable "log_retention_days" {
+  description = "Retention period for CloudWatch logs in days"
+  type        = number
+  default     = 30
+}
+
+variable "enable_autoscaling" {
+  description = "Whether to enable auto scaling for the ECS service"
+  type        = bool
+  default     = false
+}
+
+variable "min_capacity" {
+  description = "Minimum number of tasks for auto scaling"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of tasks for auto scaling"
+  type        = number
+  default     = 4
+}
+
+variable "cpu_target_value" {
+  description = "Target CPU utilization percentage for auto scaling"
+  type        = number
+  default     = 70
+}
+
+variable "memory_target_value" {
+  description = "Target memory utilization percentage for auto scaling"
+  type        = number
+  default     = 70
+}
+
+variable "allowed_egress_cidr_blocks" {
+  description = "CIDR blocks to which the ECS tasks can send traffic"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "tags" {
+  description = "Additional tags for resources"
+  type        = map(string)
+  default     = {}
+}
+
 # Security group for ECS tasks
 resource "aws_security_group" "ecs_tasks" {
   name        = "${var.service_name}-ecs-tasks-sg"
@@ -95,12 +149,15 @@ resource "aws_security_group" "ecs_tasks" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.allowed_egress_cidr_blocks
   }
 
-  tags = {
-    Name = "${var.service_name}-ecs-tasks-sg"
-  }
+  tags = merge(
+    {
+      Name = "${var.service_name}-ecs-tasks-sg"
+    },
+    var.tags
+  )
 }
 
 # ECS Cluster
@@ -112,9 +169,12 @@ resource "aws_ecs_cluster" "main" {
     value = "enabled"
   }
 
-  tags = {
-    Name = var.cluster_name
-  }
+  tags = merge(
+    {
+      Name = var.cluster_name
+    },
+    var.tags
+  )
 }
 
 # Task Definition
@@ -130,7 +190,7 @@ resource "aws_ecs_task_definition" "main" {
   container_definitions = jsonencode([
     {
       name      = var.container_name
-      image     = var.container_image
+      image     = "${var.container_image}:${var.image_tag}"
       essential = true
       portMappings = [
         {
@@ -150,19 +210,25 @@ resource "aws_ecs_task_definition" "main" {
     }
   ])
 
-  tags = {
-    Name = var.task_definition_name
-  }
+  tags = merge(
+    {
+      Name = var.task_definition_name
+    },
+    var.tags
+  )
 }
 
 # CloudWatch Logs Group
 resource "aws_cloudwatch_log_group" "main" {
   name              = "/ecs/${var.service_name}"
-  retention_in_days = 30
+  retention_in_days = var.log_retention_days
 
-  tags = {
-    Name = "/ecs/${var.service_name}"
-  }
+  tags = merge(
+    {
+      Name = "/ecs/${var.service_name}"
+    },
+    var.tags
+  )
 }
 
 # ECS Service
@@ -194,8 +260,55 @@ resource "aws_ecs_service" "main" {
 
   depends_on = [aws_cloudwatch_log_group.main]
 
-  tags = {
-    Name = var.service_name
+  tags = merge(
+    {
+      Name = var.service_name
+    },
+    var.tags
+  )
+}
+
+# Auto Scaling configuration
+resource "aws_appautoscaling_target" "ecs" {
+  count              = var.enable_autoscaling ? 1 : 0
+  max_capacity       = var.max_capacity
+  min_capacity       = var.min_capacity
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.main.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+# CPU Auto Scaling policy
+resource "aws_appautoscaling_policy" "cpu" {
+  count              = var.enable_autoscaling ? 1 : 0
+  name               = "${var.service_name}-cpu-autoscaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value = var.cpu_target_value
+  }
+}
+
+# Memory Auto Scaling policy
+resource "aws_appautoscaling_policy" "memory" {
+  count              = var.enable_autoscaling ? 1 : 0
+  name               = "${var.service_name}-memory-autoscaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value = var.memory_target_value
   }
 }
 
