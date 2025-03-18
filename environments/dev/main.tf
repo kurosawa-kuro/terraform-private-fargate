@@ -3,7 +3,7 @@ provider "aws" {
 }
 
 locals {
-  app_name = "express-api"
+  app_name = "private-fargate-api"
   environment = "dev"
   vpc_name = "${local.app_name}-${local.environment}-vpc"
   
@@ -56,6 +56,7 @@ locals {
     Project     = local.app_name
     Environment = local.environment
     ManagedBy   = "terraform"
+    ResourcePrefix = "private-fargate-api"
   }
 }
 
