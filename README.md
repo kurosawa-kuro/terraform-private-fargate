@@ -22,6 +22,68 @@
 
 ## 使用方法
 
+このプロジェクトでは、Makefileを使用してTerraformコマンドを簡単に実行できます。
+
+### Makefileの使用方法
+
+プロジェクトルートディレクトリで以下のコマンドを実行できます：
+
+```bash
+# ヘルプを表示
+make help
+
+# 初期化
+make init
+
+# 実行計画の確認
+make plan
+
+# インフラのデプロイ
+make apply
+
+# インフラの削除（確認あり）
+make destroy
+```
+
+### 環境の指定
+
+デフォルトではdev環境が使用されますが、ENV変数で環境を指定できます：
+
+```bash
+make plan ENV=dev
+make apply ENV=dev
+```
+
+### 環境別エイリアス
+
+dev環境用のショートカットコマンド：
+
+```bash
+make dev-init    # dev環境の初期化
+make dev-plan    # dev環境の実行計画確認
+make dev-apply   # dev環境へのデプロイ
+make dev-destroy # dev環境の削除
+```
+
+### 管理用コマンド
+
+```bash
+make clean     # .terraformディレクトリとキャッシュの削除
+make format    # Terraformコードのフォーマット
+make validate  # 構文検証
+```
+
+### 危険なコマンド（要注意）
+
+```bash
+make force-destroy  # 確認なしでインフラを強制削除
+make nuke          # 全環境の完全削除（特別な確認が必要）
+```
+
+### 従来のTerraformコマンド
+
+直接Terraformコマンドを使用することも可能です：
+
 1. 環境ディレクトリに移動します：
 
 ```bash
